@@ -1,851 +1,731 @@
-
 #ifndef BILL_H
 #define BILL_H
 
-#define MAX_BILL_LINES 4
+#include <stdio.h>
 
-typedef struct {
-    char service[32];
-    char details[128];
-    double amount_before_tax;
+typedef struct
+{
+    char service[30];
+    char details[40];
+
+    double previous_index;
+    double current_index;
+    double consumption;
+
+    double amount;
     double vat_rate;
+
 } BillLine;
 
-/* Service calculations */
+/* Calculation functions */
+
 double electricity_amount(double consumption);
 double gas_amount(double consumption);
 double water_amount(double consumption);
-double phone_amount(double minutes);
-double internet_amount(int package_mbps);
+double phone_amount(int minutes);
+double internet_amount(int speed);
 
-/* VAT calculation */
-double vat_amount(double amount_before_tax, double vat_rate);
+/* Display function */
 
-/* Display and save invoice */
-void display_bill(
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-);
-
-int save_bill(
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-);
+void print_bill(FILE *out, char name[], char account[],
+                char period[], BillLine lines[], int count);
 
 #endif
 
-#include "bill.h"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #include <stdio.h>
-#include <time.h>
-#include <ctype.h>
+#include <string.h>
+#include "bill.h"
 
-/* Original fixed fees */
-#define ELECTRICITY_FIXED_FEE 100.0
-#define GAS_FIXED_FEE          50.0
-#define WATER_FIXED_FEE       100.0
+/* ELECTRICITY */
 
-/* Original VAT rates */
-#define ELECTRICITY_VAT_RATE 0.09
-#define GAS_VAT_RATE         0.09
-#define WATER_VAT_RATE       0.09
-#define PHONE_VAT_RATE       0.19
-#define INTERNET_VAT_RATE    0.19
-
-/* Telephone tariff */
-#define PHONE_SUBSCRIPTION      600.0
-#define PHONE_INCLUDED_MINUTES  100.0
-#define PHONE_EXTRA_RATE        3.0
-
-/* Water sanitation */
-#define WATER_SANITATION_RATE 0.10
-
-
-/* Progressive tariff calculation */
-static double progressive_amount(
-    double consumption,
-    double first_limit,
-    double second_limit,
-    double rate1,
-    double rate2,
-    double rate3
-)
+double electricity_amount(double consumption)
 {
-    double amount = 0.0;
+    double amount = 100;
 
-    if (consumption <= first_limit) {
-        amount = consumption * rate1;
-    }
-    else if (consumption <= second_limit) {
-        amount = first_limit * rate1
-               + (consumption - first_limit) * rate2;
-    }
-    else {
-        amount = first_limit * rate1
-               + (second_limit - first_limit) * rate2
-               + (consumption - second_limit) * rate3;
-    }
+    if (consumption <= 100)
+        amount += consumption * 2;
+
+    else if (consumption <= 300)
+        amount += 100 * 2 + (consumption - 100) * 4;
+
+    else
+        amount += 100 * 2 + 200 * 4 + (consumption - 300) * 6;
 
     return amount;
 }
 
+/* GAS */
 
-/* Electricity */
-double electricity_amount(double consumption)
-{
-    return progressive_amount(
-        consumption, 100.0, 300.0, 2.0, 4.0, 6.0
-    ) + ELECTRICITY_FIXED_FEE;
-}
-
-
-/* Gas */
 double gas_amount(double consumption)
 {
-    return progressive_amount(
-        consumption, 100.0, 300.0, 1.5, 3.0, 4.5
-    ) + GAS_FIXED_FEE;
+    double amount = 50;
+
+    if (consumption <= 100)
+        amount += consumption * 1.5;
+
+    else if (consumption <= 300)
+        amount += 100 * 1.5 + (consumption - 100) * 3;
+
+    else
+        amount += 100 * 1.5 + 200 * 3 + (consumption - 300) * 4.5;
+
+    return amount;
 }
 
+/* WATER */
 
-/* Water */
 double water_amount(double consumption)
 {
-    double water_usage;
-    double sanitation_fee;
+    double usage;
+    double sanitation;
 
-    water_usage = progressive_amount(
-        consumption, 20.0, 40.0, 6.0, 20.0, 40.0
-    );
+    if (consumption <= 20)
+        usage = consumption * 6;
 
-    sanitation_fee = water_usage * WATER_SANITATION_RATE;
+    else if (consumption <= 40)
+        usage = 20 * 6 + (consumption - 20) * 20;
 
-    return water_usage + sanitation_fee + WATER_FIXED_FEE;
+    else
+        usage = 20 * 6 + 20 * 20 + (consumption - 40) * 40;
+
+    sanitation = usage * 0.10;
+
+    return usage + sanitation + 100;
 }
 
+/* TELEPHONE */
 
-/* Telephone */
-double phone_amount(double minutes)
+double phone_amount(int minutes)
 {
-    double extra_minutes = minutes - PHONE_INCLUDED_MINUTES;
+    double amount = 600;
 
-    if (extra_minutes < 0.0) {
-        extra_minutes = 0.0;
-    }
+    if (minutes > 100)
+        amount += (minutes - 100) * 3;
 
-    return PHONE_SUBSCRIPTION + extra_minutes * PHONE_EXTRA_RATE;
+    return amount;
 }
 
+/* INTERNET */
 
-/* Internet */
-double internet_amount(int package_mbps)
+double internet_amount(int speed)
 {
-    switch (package_mbps) {
-        case 4:
-            return 1000.0;
+    if (speed == 4)
+        return 1000;
 
-        case 8:
-            return 1500.0;
+    else if (speed == 8)
+        return 1500;
 
-        case 20:
-            return 2500.0;
-
-        default:
-            return 0.0;
-    }
+    else
+        return 2500;
 }
 
+/* DISPLAY BILL */
 
-/* VAT */
-double vat_amount(double amount_before_tax, double vat_rate)
+void print_bill(FILE *out, char name[], char account[],
+                char period[], BillLine lines[], int count)
 {
-    return amount_before_tax * vat_rate;
-}
-
-
-/*
-   Common invoice function.
-   It can print the invoice on the screen
-   or write it into a text file.
-*/
-static void print_bill(
-    FILE *out,
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-)
-{
-    double total_before_tax = 0.0;
-    double total_vat = 0.0;
-    double vat;
-    double total;
     int i;
 
+    double total_ht = 0;
+    double total_vat = 0;
+    double total_ttc = 0;
+
     fprintf(out, "\n");
-    fprintf(out, "======================================================================================\n");
-    fprintf(out, "                    UNIFIED UTILITY BILL\n");
-    fprintf(out, "======================================================================================\n");
+    fprintf(out, "===============================================================\n");
+    fprintf(out, "                         CUSTOMER BILL\n");
+    fprintf(out, "===============================================================\n");
 
-    fprintf(out, "Customer : %s\n", name);
-    fprintf(out, "Account  : %s\n", account_number);
-    fprintf(out, "Period   : %s\n", billing_period);
+    fprintf(out, "Customer Name  : %s\n", name);
+    fprintf(out, "Account Number : %s\n", account);
+    fprintf(out, "Billing Period : %s\n", period);
 
-    fprintf(out, "--------------------------------------------------------------------------------------\n");
+    fprintf(out, "___________________________________________________________________________________________\n");
 
-    fprintf(out,
-        "| %-14s | %-12s | %10s | %8s | %10s |\n",
-        "SERVICE", "DETAILS", "BEFORE TAX", "VAT", "TOTAL"
-    );
+    fprintf(out, "| %-12s | %8s | %8s | %-16s | %9s | %7s | %8s |\n",
+            "Service", "Previous", "Current", "Consumption",
+            "Amount HT", "VAT", "TTC");
 
-    fprintf(out, "--------------------------------------------------------------------------------------\n");
+    fprintf(out, "___________________________________________________________________________________________\n");
 
-    for (i = 0; i < line_count; i++) {
+    for (i = 0; i < count; i++)
+    {
+        char previous[20];
+        char current[20];
+        char consumption[40];
 
-        vat = vat_amount(
-            lines[i].amount_before_tax,
-            lines[i].vat_rate
-        );
+        double vat;
+        double ttc;
 
-        total = lines[i].amount_before_tax + vat;
+        if (strcmp(lines[i].service, "Electricity") == 0 ||
+            strcmp(lines[i].service, "Gas") == 0 ||
+            strcmp(lines[i].service, "Water") == 0)
+        {
+            sprintf(previous, "%.2f", lines[i].previous_index);
+            sprintf(current, "%.2f", lines[i].current_index);
+
+            sprintf(consumption, "%.2f %s",
+                    lines[i].consumption, lines[i].details);
+        }
+        else
+        {
+            strcpy(previous, "-");
+            strcpy(current, "-");
+
+            strcpy(consumption, lines[i].details);
+        }
+
+        vat = lines[i].amount * lines[i].vat_rate;
+        ttc = lines[i].amount + vat;
+
+        total_ht += lines[i].amount;
+        total_vat += vat;
+        total_ttc += ttc;
 
         fprintf(out,
-            "| %-14.14s | %-12.12s | %10.2f | %8.2f | %10.2f |\n",
-            lines[i].service,
-            lines[i].details,
-            lines[i].amount_before_tax,
-            vat,
-            total
-        );
-
-        total_before_tax += lines[i].amount_before_tax;
-        total_vat += vat;
+                "| %-12s | %8s | %8s | %-16s | %9.2f | %7.2f | %8.2f |\n",
+                lines[i].service,
+                previous,
+                current,
+                consumption,
+                lines[i].amount,
+                vat,
+                ttc);
     }
 
-    fprintf(out, "--------------------------------------------------------------------------------------\n");
+    fprintf(out, "___________________________________________________________________________________________\n");
 
-    fprintf(out,
-        "| %-14s | %-12s | %10.2f | %8.2f | %10.2f |\n",
-        "TOTAL", "",
-        total_before_tax,
-        total_vat,
-        total_before_tax + total_vat
-    );
+    fprintf(out, "| TOTAL BEFORE TAX                                      %10.2f DA             |\n",
+            total_ht);
 
-    fprintf(out, "======================================================================================\n");
+    fprintf(out, "| TOTAL VAT                                             %10.2f DA             |\n",
+            total_vat);
 
-    fprintf(out, "\n");
-    fprintf(out, "                  PAYMENT SUMMARY\n");
-    fprintf(out, "--------------------------------------------------------------------------------------\n");
+    fprintf(out, "| TOTAL TO PAY                                          %10.2f DA             |\n",
+            total_ttc);
 
-    fprintf(out, "Subtotal       : %.2f DA\n", total_before_tax);
-    fprintf(out, "Total VAT      : %.2f DA\n", total_vat);
-
-    fprintf(out, "--------------------------------------------------------------------------------------\n");
-
-    fprintf(out, "TOTAL TO PAY   : %.2f DA\n",
-            total_before_tax + total_vat);
-
-    fprintf(out, "======================================================================================\n");
-    fprintf(out, "             Thank you for using our service!\n");
-    fprintf(out, "======================================================================================\n");
+    fprintf(out, "===========================================================================================\n");
 }
 
 
-/* Display invoice */
-void display_bill(
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <math.h>
+
+#include "bill.h"
+
+/* READ TEXT */
+
+void read_text(char message[], char text[], int size)
 {
-    print_bill(
-        stdout, name, account_number,
-        billing_period, lines, line_count
-    );
+    int length;
+    int c;
+
+    while (1)
+    {
+        printf("%s", message);
+
+        if (fgets(text, size, stdin) == NULL)
+            exit(0);
+
+        length = strlen(text);
+
+        if (length > 0 && text[length - 1] == '\n')
+        {
+            text[length - 1] = '\0';
+        }
+        else if (!feof(stdin))
+        {
+            while ((c = getchar()) != '\n' && c != EOF);
+
+            printf("Input is too long. Try again.\n");
+            continue;
+        }
+
+        if (strlen(text) == 0)
+        {
+            printf("Input cannot be empty.\n");
+            continue;
+        }
+
+        return;
+    }
 }
 
+/* VALIDATE NAME */
 
-/* Save invoice */
-int save_bill(
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-)
+int valid_name(char name[])
 {
-    char filename[160];
-    char safe_account[80];
     int i;
+    int letters = 0;
 
-    FILE *file;
-    time_t now;
-    struct tm *date;
+    for (i = 0; name[i] != '\0'; i++)
+    {
+        if (isalpha((unsigned char)name[i]))
+            letters++;
 
-    /* Make account number safe for filenames */
-    for (i = 0; account_number[i] != '\0' && i < 79; i++) {
-
-        if (isalnum((unsigned char)account_number[i])) {
-            safe_account[i] = account_number[i];
-        }
-        else {
-            safe_account[i] = '_';
-        }
+        else if (name[i] != ' ' &&
+                 name[i] != '-' &&
+                 name[i] != '\'')
+            return 0;
     }
 
-    safe_account[i] = '\0';
+    return letters >= 3;
+}
 
-    /* Generate date and time */
-    now = time(NULL);
-    date = localtime(&now);
+/* VALIDATE ACCOUNT NUMBER */
 
-    if (date == NULL) {
-        printf("Could not get the current date.\n");
+int valid_account(char account[])
+{
+    int i;
+    int length = strlen(account);
+
+    if (length < 3 || length > 15)
         return 0;
+
+    for (i = 0; account[i] != '\0'; i++)
+    {
+        if (!isdigit((unsigned char)account[i]))
+            return 0;
     }
-
-    snprintf(
-        filename,
-        sizeof(filename),
-        "invoice_%s_%04d%02d%02d_%02d%02d%02d.txt",
-        safe_account,
-        date->tm_year + 1900,
-        date->tm_mon + 1,
-        date->tm_mday,
-        date->tm_hour,
-        date->tm_min,
-        date->tm_sec
-    );
-
-    file = fopen(filename, "w");
-
-    if (file == NULL) {
-        printf("Error: Unable to save the invoice.\n");
-        return 0;
-    }
-
-    /* Write the complete invoice */
-    print_bill(
-        file, name, account_number,
-        billing_period, lines, line_count
-    );
-
-    fclose(file);
-
-    printf("\nInvoice saved successfully!\n");
-    printf("File name: %s\n", filename);
 
     return 1;
 }
 
-#include "bill.h"
+/* VALIDATE BILLING PERIOD */
 
-#include <ctype.h>
-#include <errno.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define INPUT_SIZE 256
-
-#define ELECTRICITY_VAT_RATE 0.09
-#define GAS_VAT_RATE         0.09
-#define WATER_VAT_RATE       0.09
-#define PHONE_VAT_RATE       0.19
-
-
-/* Remove newline */
-static void remove_newline(char *text)
+int valid_period(char period[])
 {
-    size_t length = strlen(text);
+    int i;
+    int month;
 
-    if (length > 0 && text[length - 1] == '\n') {
-        text[length - 1] = '\0';
+    if (strlen(period) != 7)
+        return 0;
+
+    if (period[2] != '/')
+        return 0;
+
+    for (i = 0; i < 7; i++)
+    {
+        if (i != 2 && !isdigit((unsigned char)period[i]))
+            return 0;
     }
+
+    month = (period[0] - '0') * 10 +
+            (period[1] - '0');
+
+    if (month < 1 || month > 12)
+        return 0;
+
+    return 1;
 }
 
+/* READ A NUMBER */
 
-/* Read text */
-static void read_text(
-    const char *prompt,
-    char *output,
-    size_t output_size
-)
+double read_number(char message[], double minimum, double maximum)
 {
-    while (1) {
-
-        printf("%s", prompt);
-
-        if (fgets(output, (int)output_size, stdin) == NULL) {
-            printf("\nInput ended. Exiting.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        remove_newline(output);
-
-        if (output[0] != '\0') {
-            return;
-        }
-
-        printf("Input cannot be empty. Please try again.\n");
-    }
-}
-
-
-/* Read a non-negative number */
-static double read_nonnegative_double(const char *prompt)
-{
-    char input[INPUT_SIZE];
+    char line[100];
     char *end;
-    double value;
+    double number;
 
-    while (1) {
-
-        printf("%s", prompt);
-
-        if (fgets(input, sizeof(input), stdin) == NULL) {
-            printf("\nInput ended. Exiting.\n");
-            exit(EXIT_FAILURE);
-        }
+    while (1)
+    {
+        read_text(message, line, sizeof(line));
 
         errno = 0;
-        value = strtod(input, &end);
+        number = strtod(line, &end);
 
-        while (isspace((unsigned char)*end)) {
+        while (isspace((unsigned char)*end))
             end++;
-        }
 
-        if (end == input || *end != '\0' ||
-            errno == ERANGE || !isfinite(value) ||
-            value < 0.0) {
-
-            printf("Please enter a valid non-negative number.\n");
+        if (end == line || *end != '\0' ||
+            errno == ERANGE || !isfinite(number))
+        {
+            printf("Invalid input. Enter a valid number.\n");
             continue;
         }
 
-        return value;
-    }
-}
-
-
-/* Read an integer */
-static int read_integer(
-    const char *prompt,
-    int minimum,
-    int maximum
-)
-{
-    char input[INPUT_SIZE];
-    char *end;
-    long value;
-
-    while (1) {
-
-        printf("%s", prompt);
-
-        if (fgets(input, sizeof(input), stdin) == NULL) {
-            printf("\nInput ended. Exiting.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        errno = 0;
-        value = strtol(input, &end, 10);
-
-        while (isspace((unsigned char)*end)) {
-            end++;
-        }
-
-        if (end == input || *end != '\0' ||
-            errno == ERANGE ||
-            value < minimum || value > maximum) {
-
-            printf("Please enter a whole number from %d to %d.\n",
+        if (number < minimum || number > maximum)
+        {
+            printf("Number must be between %.2f and %.2f.\n",
                    minimum, maximum);
             continue;
         }
 
-        return (int)value;
+        return number;
     }
 }
 
+/* READ INTEGER CHOICE */
 
-/* Read previous and current meter readings */
-static void read_indices(double *previous, double *current)
+int read_choice(char message[], int minimum, int maximum)
 {
-    while (1) {
+    double number;
 
-        *previous = read_nonnegative_double("Previous index: ");
-        *current = read_nonnegative_double("Current index: ");
+    while (1)
+    {
+        number = read_number(message, minimum, maximum);
 
-        if (*current >= *previous) {
-            return;
+        if (number == (int)number)
+            return (int)number;
+
+        printf("Please enter a whole number.\n");
+    }
+}
+
+/* READ PREVIOUS AND CURRENT INDEXES */
+
+void read_indexes(double *previous, double *current)
+{
+    while (1)
+    {
+        *previous = read_number(
+            "Enter previous index: ", 0, 1000000000);
+
+        *current = read_number(
+            "Enter current index: ", 0, 1000000000);
+
+        if (*current >= *previous)
+            break;
+
+        printf("Error: current index must be greater than or equal to previous index.\n");
+    }
+}
+
+/* MAIN FUNCTION */
+
+int main()
+{
+    char name[60];
+    char account[20];
+    char period[10];
+    char filename[30];
+
+    BillLine lines[5];
+
+    int invoice_number = 1;
+    int another_bill;
+    int save_choice;
+
+    int choice;
+    int package;
+    int minutes;
+    int speed;
+
+    int count;
+    int selected[6];
+
+    int i;
+
+    double previous;
+    double current;
+
+    FILE *file;
+
+    do
+    {
+        count = 0;
+
+        /* RESET SELECTED SERVICES */
+
+        for (i = 0; i < 6; i++)
+        {
+            selected[i] = 0;
         }
 
-        printf("The current index cannot be lower than the previous index.\n");
-        printf("Please enter both readings again.\n");
-    }
-}
+        /* CUSTOMER INFORMATION */
+
+        printf("\n================================================\n");
+        printf("              CUSTOMER INFORMATION\n");
+        printf("================================================\n");
+
+        do
+        {
+            read_text("Enter customer name: ", name, sizeof(name));
+
+            if (!valid_name(name))
+                printf("Name must contain at least 3 letters.\n");
+
+        } while (!valid_name(name));
+
+        do
+        {
+            read_text("Enter account number: ",
+                      account, sizeof(account));
+
+            if (!valid_account(account))
+                printf("Account number must contain 3 to 15 digits.\n");
+
+        } while (!valid_account(account));
+
+        do
+        {
+            read_text("Enter billing period (MM/YYYY): ",
+                      period, sizeof(period));
+
+            if (!valid_period(period))
+                printf("Invalid period. Example: 11/2026.\n");
+
+        } while (!valid_period(period));
 
 
-/* Add a service to the bill */
-static void add_line(
-    BillLine lines[],
-    int *line_count,
-    const char *service,
-    const char *details,
-    double amount,
-    double vat_rate
-)
-{
-    BillLine *line = &lines[*line_count];
+        /* SERVICE MENU */
 
-    snprintf(line->service, sizeof(line->service), "%s", service);
-    snprintf(line->details, sizeof(line->details), "%s", details);
-
-    line->amount_before_tax = amount;
-    line->vat_rate = vat_rate;
-
-    (*line_count)++;
-}
-
-
-/* Electricity */
-static void add_electricity(
-    BillLine lines[],
-    int *line_count
-)
-{
-    double previous;
-    double current;
-    double consumption;
-    char details[128];
-
-    printf("\nElectricity meter readings (kWh)\n");
-
-    read_indices(&previous, &current);
-
-    consumption = current - previous;
-
-    snprintf(details, sizeof(details),
-             "Used: %.2f kWh", consumption);
-
-    add_line(
-        lines, line_count,
-        "Electricity",
-        details,
-        electricity_amount(consumption),
-        ELECTRICITY_VAT_RATE
-    );
-}
-
-
-/* Gas */
-static void add_gas(
-    BillLine lines[],
-    int *line_count
-)
-{
-    double previous;
-    double current;
-    double consumption;
-    char details[128];
-
-    printf("\nGas meter readings (m3)\n");
-
-    read_indices(&previous, &current);
-
-    consumption = current - previous;
-
-    snprintf(details, sizeof(details),
-             "Used: %.2f m3", consumption);
-
-    add_line(
-        lines, line_count,
-        "Gas",
-        details,
-        gas_amount(consumption),
-        GAS_VAT_RATE
-    );
-}
-
-
-/* Water */
-static void add_water(
-    BillLine lines[],
-    int *line_count
-)
-{
-    double previous;
-    double current;
-    double consumption;
-    char details[128];
-
-    printf("\nWater meter readings (m3)\n");
-
-    read_indices(&previous, &current);
-
-    consumption = current - previous;
-
-    snprintf(details, sizeof(details),
-             "Used: %.2f m3", consumption);
-
-    add_line(
-        lines, line_count,
-        "Water",
-        details,
-        water_amount(consumption),
-        WATER_VAT_RATE
-    );
-}
-
-
-/* Telephone and Internet */
-static void add_phone_and_internet(
-    BillLine lines[],
-    int *line_count
-)
-{
-    double previous;
-    double current;
-    double minutes;
-    int package;
-    int speed;
-    double amount;
-    char details[128];
-
-    printf("\nTelephone and Internet\n");
-
-    printf("Telephone meter readings (minutes)\n");
-
-    read_indices(&previous, &current);
-
-    minutes = current - previous;
-
-    printf("\nInternet packages:\n");
-    printf("  1. 4 Mbps  - 1000 DA\n");
-    printf("  2. 8 Mbps  - 1500 DA\n");
-    printf("  3. 20 Mbps - 2500 DA\n");
-
-    package = read_integer("Choose a package (1-3): ", 1, 3);
-
-    if (package == 1) {
-        speed = 4;
-    }
-    else if (package == 2) {
-        speed = 8;
-    }
-    else {
-        speed = 20;
-    }
-
-    amount = phone_amount(minutes);
-    amount += internet_amount(speed);
-
-    snprintf(
-        details,
-        sizeof(details),
-        "%.2f min, %d Mbps",
-        minutes,
-        speed
-    );
-
-    add_line(
-        lines, line_count,
-        "Phone + Internet",
-        details,
-        amount,
-        PHONE_VAT_RATE
-    );
-}
-
-
-/* Ask whether to save the invoice */
-static void ask_to_save_bill(
-    const char *name,
-    const char *account_number,
-    const char *billing_period,
-    const BillLine lines[],
-    int line_count
-)
-{
-    int choice;
-
-    printf("\n");
-    printf("======================================================================================\n");
-    printf("           SAVE YOUR INVOICE\n");
-    printf("======================================================================================\n");
-    printf("1. Yes, save invoice\n");
-    printf("0. No, continue without saving\n");
-    printf("======================================================================================\n");
-
-    choice = read_integer("Your choice: ", 0, 1);
-
-    if (choice == 1) {
-
-        save_bill(
-            name,
-            account_number,
-            billing_period,
-            lines,
-            line_count
-        );
-    }
-    else {
-        printf("\nInvoice was not saved.\n");
-    }
-}
-
-
-/* Ask whether to create another bill */
-static int ask_to_start_another_bill(void)
-{
-    printf("\n");
-
-    return read_integer(
-        "Create another bill? (1 = Yes, 0 = No): ",
-        0, 1
-    );
-}
-
-
-/* MAIN PROGRAM */
-int main(void)
-{
-    while (1) {
-
-        char name[INPUT_SIZE];
-        char account_number[INPUT_SIZE];
-        char billing_period[INPUT_SIZE];
-
-        BillLine lines[MAX_BILL_LINES];
-
-        int line_count = 0;
-        int selected[5] = {0};
-        int choice;
-
-        printf("\n");
-        printf("======================================================================================\n");
-        printf("       UNIFIED UTILITY BILL SYSTEM\n");
-        printf("======================================================================================\n");
-
-        /* Customer information */
-        read_text(
-            "Customer name: ",
-            name,
-            sizeof(name)
-        );
-
-        read_text(
-            "Account number: ",
-            account_number,
-            sizeof(account_number)
-        );
-
-        read_text(
-            "Billing period (e.g. October 2026): ",
-            billing_period,
-            sizeof(billing_period)
-        );
-
-        /* Service selection */
-        while (1) {
-
-            printf("\n");
-            printf("======================================================================================\n");
-            printf("           SERVICE MENU\n");
-            printf("======================================================================================\n");
+        do
+        {
+            printf("\n================================================\n");
+            printf("                  SERVICE MENU\n");
+            printf("================================================\n");
 
             printf("1. Electricity\n");
             printf("2. Gas\n");
             printf("3. Water\n");
-            printf("4. Telephone and Internet\n");
-            printf("5. Finish and display bill\n");
+            printf("4. Telephone\n");
+            printf("5. Internet\n");
+            printf("0. Finish bill\n");
 
-            printf("======================================================================================\n");
+            choice = read_choice("Enter your choice: ", 0, 5);
 
-            choice = read_integer(
-                "Your choice (1-5): ",
-                1, 5
-            );
+            if (choice == 0)
+            {
+                if (count == 0)
+                    printf("Please select at least one service.\n");
 
-            if (choice == 5) {
-
-                if (line_count == 0) {
-                    printf("Select at least one service first.\n");
-                    continue;
-                }
-
-                break;
+                continue;
             }
 
-            if (selected[choice]) {
+            /* CHECK DUPLICATE SERVICES */
 
-                printf("That service has already been added.\n");
+            if (selected[choice] == 1)
+            {
+                printf("This service has already been selected.\n");
                 continue;
             }
 
             selected[choice] = 1;
 
-            switch (choice) {
+            /* CLEAR CURRENT BILL LINE */
 
-                case 1:
-                    add_electricity(lines, &line_count);
-                    break;
+            memset(&lines[count], 0, sizeof(BillLine));
 
-                case 2:
-                    add_gas(lines, &line_count);
-                    break;
 
-                case 3:
-                    add_water(lines, &line_count);
-                    break;
+            /* ELECTRICITY */
 
-                case 4:
-                    add_phone_and_internet(lines, &line_count);
-                    break;
+            if (choice == 1)
+            {
+                strcpy(lines[count].service, "Electricity");
+                strcpy(lines[count].details, "kWh");
+
+                read_indexes(&previous, &current);
+
+                lines[count].previous_index = previous;
+                lines[count].current_index = current;
+
+                lines[count].consumption = current - previous;
+
+                lines[count].amount =
+                    electricity_amount(lines[count].consumption);
+
+                lines[count].vat_rate = 0.09;
             }
 
+
+            /* GAS */
+
+            else if (choice == 2)
+            {
+                strcpy(lines[count].service, "Gas");
+                strcpy(lines[count].details, "m3");
+
+                read_indexes(&previous, &current);
+
+                lines[count].previous_index = previous;
+                lines[count].current_index = current;
+
+                lines[count].consumption = current - previous;
+
+                lines[count].amount =
+                    gas_amount(lines[count].consumption);
+
+                lines[count].vat_rate = 0.09;
+            }
+
+
+            /* WATER */
+
+            else if (choice == 3)
+            {
+                strcpy(lines[count].service, "Water");
+                strcpy(lines[count].details, "m3");
+
+                read_indexes(&previous, &current);
+
+                lines[count].previous_index = previous;
+                lines[count].current_index = current;
+
+                lines[count].consumption = current - previous;
+
+                lines[count].amount =
+                    water_amount(lines[count].consumption);
+
+                lines[count].vat_rate = 0.09;
+            }
+
+
+            /* TELEPHONE */
+
+            else if (choice == 4)
+            {
+                strcpy(lines[count].service, "Telephone");
+
+                minutes = read_choice(
+                    "Enter number of minutes: ", 0, 100000);
+
+                sprintf(lines[count].details,
+                        "%d minutes", minutes);
+
+                lines[count].consumption = minutes;
+
+                lines[count].amount = phone_amount(minutes);
+
+                lines[count].vat_rate = 0.19;
+            }
+
+
+            /* INTERNET */
+
+            else if (choice == 5)
+            {
+                strcpy(lines[count].service, "Internet");
+
+                printf("\nInternet packages:\n");
+                printf("1. 4 Mbps  - 1000 DA\n");
+                printf("2. 8 Mbps  - 1500 DA\n");
+                printf("3. 20 Mbps - 2500 DA\n");
+
+                package = read_choice(
+                    "Choose a package: ", 1, 3);
+
+                if (package == 1)
+                    speed = 4;
+
+                else if (package == 2)
+                    speed = 8;
+
+                else
+                    speed = 20;
+
+                sprintf(lines[count].details,
+                        "%d Mbps", speed);
+
+                lines[count].consumption = speed;
+
+                lines[count].amount = internet_amount(speed);
+
+                lines[count].vat_rate = 0.19;
+            }
+
+            count++;
+
             printf("\nService added successfully!\n");
+
+        } while (choice != 0 || count == 0);
+
+
+        /* DISPLAY THE BILL */
+
+        printf("\nYour bill is ready!\n");
+
+        print_bill(stdout, name, account, period, lines, count);
+
+
+        /* ASK TO SAVE THE BILL */
+
+        save_choice = read_choice(
+            "\nDo you want to save the bill? (1 = Yes, 0 = No): ",
+            0, 1);
+
+        if (save_choice == 1)
+        {
+            sprintf(filename, "invoice_%d.txt", invoice_number);
+
+            file = fopen(filename, "w");
+
+            if (file != NULL)
+            {
+                print_bill(file, name, account, period, lines, count);
+
+                fclose(file);
+
+                printf("\nBill saved successfully in %s\n", filename);
+            }
+            else
+            {
+                printf("\nError: Could not save the bill.\n");
+            }
+        }
+        else
+        {
+            printf("\nBill was not saved.\n");
         }
 
-        /* Display invoice */
-        display_bill(
-            name,
-            account_number,
-            billing_period,
-            lines,
-            line_count
-        );
+        invoice_number++;
 
-        /* Save invoice */
-        ask_to_save_bill(
-            name,
-            account_number,
-            billing_period,
-            lines,
-            line_count
-        );
 
-        /* Another bill */
-        if (!ask_to_start_another_bill()) {
+        /* ASK FOR ANOTHER BILL */
 
-            printf("\n");
-            printf("Thank you for using our billing system!\n");
+        another_bill = read_choice(
+            "\nDo you want to create another bill? (1 = Yes, 0 = No): ",
+            0, 1);
 
-            break;
-        }
-    }
+    } while (another_bill == 1);
+
+
+    printf("\nThank you for using our billing system!\n");
 
     return 0;
 }
